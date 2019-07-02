@@ -1,0 +1,176 @@
+import java.io.BufferedReader;
+import java.io.FileInputStream;
+import java.io.InputStreamReader;
+import java.util.Scanner;
+
+
+public class StableMatching
+{
+    private int N, assignedCount;
+    private String[][] menPreference;
+    private String[][] womenPreference;
+    private String[] men;
+    private String[] women;
+    private String[] womenPair;
+    private boolean[] menAssigned;
+    
+    /** main function **/
+    public static void main(String[] args) 
+    {
+    	
+    	
+    	Scanner input = new Scanner(System.in);
+    	System.out.println("Enter the Pairs you need to match:"); //asking user about the count of pairs
+    	int n = input.nextInt();
+    	
+    	
+        System.out.println("Gale Shapley Stable Matching Algorithm Output\n");
+        String m[] = new String[n];
+		String w[] = new String[n];
+		String[][] m_prefer = new String[n][n]; //storing men's Preference List
+		String[][] w_prefer = new String[n][n]; //storing women's Preference List
+        
+        try {
+			
+			FileInputStream fstream = new FileInputStream("menpreference"); //reading men's preference list from input file
+			BufferedReader br = new BufferedReader(new InputStreamReader(fstream));
+			int i = 0;
+			String strLine = "";
+			while ((strLine = br.readLine()) != null) {
+				String m_temp[] = strLine.split(",");
+				m[i] = m_temp[0].trim();
+				
+				
+				for(int z =1; z<m_temp.length; z++) {
+					m_prefer[i][z-1] = m_temp[z].trim(); //Storing the values in array
+				}
+				i++;
+			}
+		
+		    FileInputStream fstream2 = new FileInputStream("womenpreference"); //reading women's preference list from input file
+			BufferedReader br2 = new BufferedReader(new InputStreamReader(fstream2));
+			i=0;
+			String strLine2 = "";
+			while ((strLine2 = br2.readLine()) != null) {
+				String w_temp[] = strLine2.split(",");
+				w[i] = w_temp[0].trim();
+				
+				for(int y =1; y<w_temp.length; y++) {
+					w_prefer[i][y-1] = w_temp[y].trim(); //Storing the values in array
+				}
+				i++;
+			}
+			
+		
+			fstream2.close();
+			br.close();
+			br2.close();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+        StableMatching matching = new StableMatching(m, w, m_prefer, w_prefer);
+        }
+        
+ /* Constructor */
+    public StableMatching(String[] m, String[] w, String[][] mp, String[][] wp)
+    {
+        N = mp.length;
+        assignedCount = 0;
+        men = m;
+        women = w;
+        menPreference = mp;
+        womenPreference = wp;
+        menAssigned = new boolean[N];
+        womenPair = new String[N];
+        calcMatches();
+    }
+    /* function to calculate all matches */
+    private void calcMatches()
+    {
+        while (assignedCount < N)
+        {
+            int free;
+            for (free = 0; free < N; free++)
+                if (!menAssigned[free]) //Checking weather men is free or assigned
+                    break;
+ 
+            for (int i = 0; i < N && !menAssigned[free]; i++)
+            {
+                int index = womenIndex(menPreference[free][i]);
+                if (womenPair[index] == null)
+                {
+                    womenPair[index] = men[free]; //If men is free, assign current woman to men
+                    menAssigned[free] = true;
+                    assignedCount++;
+                }
+                else
+                {
+                    String currentPartner = womenPair[index]; // If men is not free, checking the current partner of men,
+                    if (morePreference(currentPartner, men[free], index))
+                    {
+                        womenPair[index] = men[free];
+                        menAssigned[free] = true;
+                        menAssigned[menIndex(currentPartner)] = false;
+                    }
+                }
+            }            
+        }
+        
+        
+        
+        
+        
+  Sample Inputs:
+Mens Preference:
+A,W,X,Z,Y
+B,W,Y,Z,X
+C,X,W,Y,Z
+D,W,Z,X,Y
+
+Womens Preference:
+W,D,B,C,A
+X,D,B,A,C
+Y,A,D,B,C
+Z,B,A,D,C
+        printPairs();
+    }
+    /* function to check if women prefers new partner over old assigned partner */
+    private boolean morePreference(String curPartner, String newPartner, int index)
+    {
+        for (int i = 0; i < N; i++)
+        {
+            if (womenPreference[index][i].equals(newPartner)) //If new Partner is more preferable than current partner assign to new Partner
+                return true;
+            if (womenPreference[index][i].equals(curPartner))
+                return false;
+        }
+        return false;
+    }
+    /* get men index */
+    private int menIndex(String str)
+    {
+        for (int i = 0; i < N; i++)
+            if (men[i].equals(str))
+                return i;
+        return -1;
+    }
+    /* get women index */
+    private int womenIndex(String str)
+    {
+        for (int i = 0; i < N; i++)
+            if (women[i].equals(str))
+                return i;
+        return -1;
+    }
+    /* print couples */
+    public void printPairs()
+    {
+        System.out.println("Stable Pairs are : ");
+        for (int i = 0; i < N; i++)
+        {
+            System.out.println(womenPair[i] +" "+ women[i]); //Printing the Pairs
+        }
+    }
+   
+    
+}
