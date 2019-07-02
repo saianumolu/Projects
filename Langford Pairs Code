@@ -1,0 +1,32 @@
+import java.io.BufferedReader;
+import java.io.FileInputStream;
+import java.io.InputStreamReader;
+import java.util.Scanner;
+
+public class Langfordpairs
+{
+public Langfordpairs(int[] array, int n) {
+        if (n == 0) {
+            for (int i = 0; i< array.length;i++)
+                System.out.print(array[i] + " "); //Printing the single Langford Pair once
+            System.out.print("\n");
+            return;
+        } 
+        for (int i=0;i<array.length-n-1;i++) {
+            if(array[i] == 0 && array[i+n+1] == 0) { //Checking for the empty slot
+                array[i] = n; array[i+n+1] = n;
+               Langfordpairs l1 = new Langfordpairs(array, n-1); // recursive function cals until n==0
+                array[i] = 0; array[i+n+1] = 0; 
+            }
+        }
+    }
+ public static void main(String[] args)
+    {
+        int array[]; 
+       Scanner reader = new Scanner(System.in);  // Reading from System.in
+		System.out.println("Enter a number: ");           // User enters number
+		int n = reader.nextInt();
+        array=new int[2*n];						// arrayay size should be 2 times user input number
+		Langfordpairs l = new Langfordpairs(array,n);		// Calling the function
+    }
+}
