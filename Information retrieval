@@ -1,0 +1,436 @@
+#IR project 2
+# Members: Saurabh Shukla
+# Sairam Anumolu
+# FILE: util.py
+#
+"""
+utility functions for processing terms
+shared by both indexing and query processing
+"""
+from nltk.stem import *
+stemmers = {}
+swords = {}
+LVL = {'ERROR': 1,'WARNING': 2,'INFO': 3,'DEBUG': 4}
+class ClassLabels:
+def __init__(self, classfile):
+with open(classfile) as (f):
+self.Classes = dict([ (ln.split()[0], int(ln.split()[1])) for ln in f ])
+def getlabelforgroup(self, grp):
+return self.Classes[grp]
+class Logger:
+def __init__(self, level=1):
+self.loglevel = level
+if self.loglevel >= 1:
+self.logfile = open('queryprocessor.log', 'w+')
+def log(self, msg, lvl):
+if LVL[lvl] <= self.loglevel:
+self.logfile.write(lvl + ':' + msg + '\n')
+if LVL[lvl] <= 3:
+print msg
+def isStopWord(word, lang='english'):
+""" using the NLTK functions, return true/false"""
+if lang not in swords:
+stopwords = [ w.rstrip('\n') for w in open('./stopwords', 'r') ]
+swords[lang] = set(stopwords)
+return (False, True)[word in swords[lang]]
+def stemming(word, lang='english'):
+""" return the stem, using a NLTK stemmer. check the project description for installing and using it"""
+if lang not in stemmers:
+stemmers[lang] = SnowballStemmer(lang)
+try:
+w = stemmers[lang].stem(word)
+except Exception as e:
+try:
+decoded = word.decode('utf-8', errors='ignore').encode('ascii', errors='ignore')
+w = stemmers[lang].stem(decoded)
+except Exception as e:
+print ('{0} in processing word:{1}').format(str(e), word)
+w = ''
+return w
+#IR project 2
+# Members: Saurabh Shukla
+# Sairam Anumolu
+# FILE: doc_processor.py
+#
+'''
+processing documents to read bottom N lines specified by 'Lines:' tag
+'''
+import os
+from os import path
+from util import ClassLabels
+import re
+reg_text = re.compile(r'^.*\w+.*$')
+class DocumentVector:
+def __init__(self, label, features):
+self.label = label
+self.features = features
+class DocumentRepository:
+def __init__(self, docRoot, labelfile):
+class_labels = ClassLabels(labelfile)
+def iterdocs(groups):
+for gdir in groups:
+label = class_labels.getlabelforgroup(path.basename(gdir))
+for f in os.listdir(gdir):
+fname = path.join(gdir, f)
+yield Document(label, fname)
+grps = [path.join(docRoot, d) for d in os.listdir(docRoot) if path.isdir(path.join(docRoot, d))]
+self.docs = iterdocs(grps)
+class Document:
+staticid = 1
+def __init__(self, label, filename):
+def handle_doc_without_linestag(fname):
+buf = []
+with open('Invalid_files.txt', 'a') as f:
+f.write(fname+'\n')
+reg_tags = re.compile(r'^[a-zA-Z0-9\-]+:.*$')
+for line in open(fname):
+if reg_tags.match(line):
+continue
+buf.append(line)
+return ' '.join([l for l in buf if reg_text.match(l)])
+self.id = Document.staticid
+Document.staticid += 1
+self.label = label
+read_lines = 0
+self.body = ''
+buf = []
+for line in open(filename):
+if line.startswith('Subject:'):
+self.body = line.split(':')[-1]
+if line.startswith('Lines:'):
+try:
+read_lines = int(line.split(':')[-1])
+except ValueError as e:
+break
+if read_lines != 0:
+buf.append(line)
+if read_lines == 0:
+self.body += handle_doc_without_linestag(filename)
+else:
+self.body += ' '.join([l for l in buf[-read_lines:] if reg_text.match(line)])
+if __name__ == '__main__':
+cf = DocumentRepository('/home/kingpin/Work/IR/Project2/mini_newsgroups')
+with open('doctolabels', 'w') as f:
+for doc in cf.docs:
+f.write("{0},{1}\n".format(doc.label, doc.id))
+#IR project 2
+# Members: Saurabh Shukla
+# Sairam Anumolu
+# FILE: index.py
+#
+'''
+Index structure:
+The Index class contains a list of IndexItems, stored in a dictionary type for easier access
+each IndexItem contains the term and a set of PostingItems
+each PostingItem contains a document ID and a list of positions that the term occurs
+'''
+import util
+import traceback
+from numpy.linalg import norm as l2norm
+from doc_processor import DocumentRepository, DocumentVector
+import argparse, os, sys, re
+from numpy import log10
+STRIP_CHARS = "'\":.\\><+-*/_|,!\n({[)]}?"
+email_reg = re.compile('^.+@.+\.\w+.*$')
+class Posting:
+def __init__(self, docID):
+self.docID = docID
+self.tf
+def append(self, pos):
+self.positions.append(pos)
+def sort(self):
+''' sort positions'''
+self.positions.sort()
+def merge(self, positions):
+self.positions.extend(positions)
+def term_freq(self):
+''' return the term frequency in the document'''
+return len(self.positions)
+class IndexItem:
+termindex = 0
+def __init__(self, term):
+if IndexItem.termindex == 0:
+IndexItem.termindex = 1
+self.termid = IndexItem.termindex
+self.postings = set()
+IndexItem.termindex += 1
+def add(self, docid):
+''' add a posting'''
+self.postings.add(docid)
+def df(self):
+return len(self.postings)
+def tf(v):
+'''Returns tf as log normalized term frequency'''
+return round((log10(1+v)), 4)
+def streamDoc(doc):
+# Return tokens from document body
+for w in doc.body.split():
+w = w.lower().strip(STRIP_CHARS)
+if len(w) == 0 or email_reg.match(w):
+continue
+if util.isStopWord(w):
+continue
+w = util.stemming(w)
+yield w
+class InvertedIndex:
+def __init__(self, filename=''):
+self.terms = {} # list of IndexItems
+self.termindex = {} # list of IndexItems
+self.docs = {} # list of IndexItems
+self.nDocs = 0 # the number of indexed documents
+self.features = open(filename, 'w')
+def indexDoc(self, doc): # indexing a Document object
+features = {}
+self.nDocs += 1
+#Retrieve token and position from document stream
+for w in streamDoc(doc):
+if w not in self.terms:
+item = IndexItem(doc.id)
+self.terms[w] = item
+self.termindex[item.termid]=w
+self.terms[w].add(doc.id)
+self.termindex[self.terms[w].termid] = w
+if self.terms[w].termid not in features:
+features[self.terms[w].termid] = 0
+features[self.terms[w].termid] += 1
+features = dict(map(lambda f:(f, tf(features[f])), features))
+self.docs[doc.id] = DocumentVector(doc.label, features)
+def sort(self):
+''' sort all posting lists by docID'''
+for e in self.terms:
+self.terms[e].sort()
+def idf(self, termid):
+''' compute the inverted document frequency for a given term'''
+term = self.termindex[termid]
+return round(log10(self.nDocs/self.terms[term].df()), 4)
+def test():
+''' test your code thoroughly. put the testing cases here'''
+print 'Pass'
+def build_document_vectors(index, training_data, normalize = 1):
+docs = index.docs
+with open(training_data, 'w') as f:
+for d in docs:
+flist = []
+vect = '{0} '.format(docs[d].label)
+features = map(lambda e:(e, docs[d].features[e]*index.idf(e)), docs[d].features)
+if normalize == 1:
+doclen = l2norm(map(lambda e:e[1], features))
+else:
+doclen = 1
+for fnorm in sorted(features):
+flist.append('{0}:{1}'.format(fnorm[0], round((fnorm[1]/doclen), 4)))
+vect+= ' '.join(flist)
+f.write(vect+'\n')
+def extract_features(docroot, labelfile, features, training_data):
+try:
+indx = InvertedIndex(features)
+repo = DocumentRepository(docroot, labelfile)
+#For each document object, build index
+for doc in repo.docs:
+indx.indexDoc(doc)
+print("Number of docs processed:{0}".format(indx.nDocs))
+print("doc dictionary len: {0}".format(len(indx.docs)))
+with open(features, 'w') as f:
+printfunc = lambda e:f.write('{0} {1}\n'.format(e, indx.termindex[e]))
+map(printfunc, indx.termindex)
+build_document_vectors(indx, training_data)
+except IOError as e:
+print(e)
+sys.exit(1)
+print 'Done'
+def main():
+try:
+parser = argparse.ArgumentParser()
+parser.add_argument('docroot',
+type=str, help='/path/to/document/root')
+parser.add_argument('class_defn_file',
+type=str, help='/path/to/class_definition/file')
+parser.add_argument('features_index',
+type=str, help='/path/to/output/indexed_features/file')
+parser.add_argument('training_data_file',
+type=str, help='/path/to/output/trainingdata/file')
+args = parser.parse_args()
+DOCROOT = args.docroot
+LABELFILE = args.class_defn_file
+FEATURES_INDEX = args.features_index
+TRAINING_DATA = args.training_data_file
+extract_features(DOCROOT, LABELFILE, FEATURES_INDEX, TRAINING_DATA)
+except Exception as e:
+print("Feature extraction failed.\n{0}".format(traceback.format_exc()))
+if __name__ == '__main__':
+main()
+#IR project 2
+# Members: Saurabh Shukla
+# Sairam Anumolu
+# FILE: classification.py
+#
+from sklearn.datasets import load_svmlight_file
+from sklearn.model_selection import ShuffleSplit
+from sklearn.naive_bayes import MultinomialNB, BernoulliNB
+from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
+from numpy import linspace
+from sklearn.model_selection import GridSearchCV, cross_val_score
+import pandas as pd
+Training_data_file = './repo_training_data/training_data_lnorm'
+feature_vectors, targets = load_svmlight_file(Training_data_file)
+crossval_iter = ShuffleSplit(test_size=.2, random_state=5)
+parameters = {}
+clfMultinomial = MultinomialNB()
+parameters['Multinomial'] = {'alpha':map(lambda e:round(e, 4), linspace(0.001, 0.02, num=25))}
+clfSVC = SVC()
+parameters['SVC'] = {'kernel':['linear']}
+clfBernoulli = BernoulliNB()
+parameters['Bernoulli'] = {'alpha':map(lambda e:round(e, 4), linspace(0.08, 0.1, num=25))}
+clfKNN = KNeighborsClassifier()
+parameters['KNN'] = {'n_neighbors':xrange(5,15), 'weights':['uniform', 'distance']}
+classifiers = {'SVC':clfSVC, 'Bernoulli':clfBernoulli, 'Multinomial':clfMultinomial, 'KNN':clfKNN}
+for c in classifiers:
+clf = GridSearchCV(classifiers[c], parameters[c], cv=crossval_iter, scoring='f1_macro')
+clf.fit(feature_vectors, targets)
+print("Best scoring parameters for {0}:{1}, score: {2}".format(c, clf.best_params_, round(clf.best_score_,
+3)))
+scores = {'SVC':[], 'Bernoulli':[], 'multinomial':[], 'KNN':[]}
+clfSVC = SVC(kernel='linear')
+clfBernoulli = BernoulliNB(alpha=0.0983)
+clfMultinomial = MultinomialNB(alpha=0.016)
+clfKNN = KNeighborsClassifier(n_neighbors=10, weights='distance')
+scoring = ['f1', 'precision', 'recall']
+for i in xrange(len(scoring)):
+score = cross_val_score(clfSVC, feature_vectors, targets,
+cv=crossval_iter, scoring='{0}_macro'.format(scoring[i]))
+scores['SVC'].append('%0.2f(+/-%0.2f)'%(score.mean(), score.std() * 2))
+score = cross_val_score(clfBernoulli, feature_vectors, targets,
+cv=crossval_iter, scoring='{0}_macro'.format(scoring[i]))
+scores['Bernoulli'].append('%0.2f(+/-%0.2f)'%(score.mean(), score.std() * 2))
+score = cross_val_score(clfMultinomial, feature_vectors, targets,
+cv=crossval_iter, scoring='{0}_macro'.format(scoring[i]))
+scores['multinomial'].append('%0.2f(+/-%0.2f)'%(score.mean(), score.std() * 2))
+score = cross_val_score(clfKNN, feature_vectors, targets,
+cv=crossval_iter, scoring='{0}_macro'.format(scoring[i]))
+scores['KNN'].append('%0.2f(+/-%0.2f)'%(score.mean(), score.std() * 2))
+df = pd.DataFrame.from_dict(scores, orient='index')
+df.columns = ['F1', 'Precision', 'Recall']
+print(df)
+#IR project 2
+# Members: Saurabh Shukla
+# Sairam Anumolu
+# FILE: feature_selection.py
+#
+from sklearn.datasets import load_svmlight_file
+from sklearn.model_selection import ShuffleSplit
+from sklearn.feature_selection import SelectKBest
+from sklearn.naive_bayes import MultinomialNB, BernoulliNB
+from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.feature_selection import chi2, mutual_info_classif
+from sklearn.model_selection import cross_val_score
+from numpy import linspace, array
+import matplotlib.pyplot as plt
+Training_data_file = './repo_training_data/training_data_lnorm'
+feature_vectors, targets = load_svmlight_file(Training_data_file)
+crossval_iter = ShuffleSplit(test_size=.2, random_state=5)
+X = feature_vectors
+y = targets
+clfSVC = SVC(kernel='linear')
+clfBernoulli = BernoulliNB(alpha=0.0983)
+clfMultinomial = MultinomialNB(alpha=0.016)
+clfKNN = KNeighborsClassifier(n_neighbors=10, weights='distance')
+chiSCORES = {}
+miSCORES = {}
+Klist = linspace(100, 20000, 20, dtype=int)
+Classifiers = {'SVC':clfSVC, 'Bernoulli':clfBernoulli, 'Multinomial':clfMultinomial, 'KNN':clfKNN}
+for clf in Classifiers:
+chiSCORES = {}
+miSCORES = {}
+plt.figure()
+for k in Klist:
+X_new1 = SelectKBest(chi2, k=k).fit_transform(X, y)
+X_new2 = SelectKBest(mutual_info_classif, k=k).fit_transform(X, y)
+scores = cross_val_score(Classifiers[clf], X_new1, y, cv=crossval_iter, scoring='f1_macro')
+print("(CHI2)Accuracy: %0.2f --> %0.2f (+/- %0.2f)" % (k, scores.mean(), scores.std() * 2))
+chiSCORES[k] = scores.mean()
+scores = cross_val_score(Classifiers[clf], X_new2, y, cv=crossval_iter, scoring='f1_macro')
+print("(MI)Accuracy: %0.2f --> %0.2f (+/- %0.2f)" % (k, scores.mean(), scores.std() * 2))
+miSCORES[k] = scores.mean()
+colors = ['aqua', 'darkorange']
+x_features = sorted(chiSCORES)
+y_scores = map(lambda k:chiSCORES[k], x_features)
+plt.plot(array((x_features)), array((y_scores)), color=colors[0], lw=2,
+label='CHI2')
+kval = x_features[y_scores.index(max(y_scores))]
+bestscore = max(y_scores)
+plt.scatter(kval, bestscore, marker='X', color=colors[0], label='score={0}@k={1}'.format(round(bestscore,
+3), kval))
+x_features = sorted(miSCORES)
+y_scores = map(lambda k:miSCORES[k], x_features)
+plt.plot(array((x_features)), array((y_scores)), color=colors[1], lw=2,
+label='Mutual Information')
+kval = x_features[y_scores.index(max(y_scores))]
+bestscore = max(y_scores)
+plt.scatter(kval, bestscore, marker='o', color=colors[1], label='score={0}@k={1}'.format(round(bestscore,
+3), kval))
+plt.legend(loc='lower right')
+plt.title('Classifier-{0}'.format(clf))
+plt.xlabel('Num features')
+plt.ylabel('F1_macro score')
+plt.show()
+#IR project 2
+# Members: Saurabh Shukla
+# Sairam Anumolu
+# File: Clustering.py
+#
+from sklearn.datasets import load_svmlight_file
+from sklearn.model_selection import ShuffleSplit
+from sklearn.cluster import KMeans, AgglomerativeClustering
+from sklearn import metrics
+from numpy import linspace, array
+from sklearn.feature_selection import SelectKBest, chi2, mutual_info_classif
+import matplotlib.pyplot as plt
+Training_data_file = './repo_training_data/training_data_lnorm'
+feature_vectors, targets = load_svmlight_file(Training_data_file)
+X_new1 = SelectKBest(chi2, k=200).fit_transform(feature_vectors, targets)
+PlotKmeansData = {}
+PlotAggloData = {}
+for c in linspace(4,20, num=8, dtype=int):
+PlotKmeansData[c] = []
+PlotAggloData[c] = []
+kmeans_model = KMeans(n_clusters=c, random_state=2).fit(X_new1)
+single_linkage_model = AgglomerativeClustering(
+n_clusters=c, linkage='average', affinity='euclidean').fit(X_new1.toarray())
+PlotKmeansData[c].append(round(metrics.silhouette_score(X_new1,
+kmeans_model.labels_, metric='euclidean',
+random_state=2), 3))
+PlotAggloData[c].append(round(metrics.silhouette_score(X_new1,
+single_linkage_model.labels_, metric='euclidean',
+random_state=2), 3))
+PlotKmeansData[c].append(round(metrics.normalized_mutual_info_score(targets, kmeans_model.labels_), 3))
+PlotAggloData[c].append(round(metrics.normalized_mutual_info_score(targets, single_linkage_model.labels_),
+3))
+#print 'SIL:{0}:{1}, {2}'.format(c, PlotKmeansData[c][0], PlotAggloData[c][0])
+#print 'NMI:{0}:{1}, {2}'.format(c, PlotKmeansData[c][1], PlotAggloData[c][1])
+X_vals = PlotKmeansData.keys()
+scoringMethods = ['Silhouette', 'Normalized Mutual Information']
+colors = ['aqua', 'darkorange']
+plt.figure()
+for i in xrange(len(scoringMethods)):
+y1_vals = map(lambda v:PlotKmeansData[v][i], X_vals)
+y2_vals = map(lambda v:PlotAggloData[v][i], X_vals)
+plt.plot(array((X_vals)), array((y1_vals)), color=colors[0], lw=2,
+label='KMeans Clustering')
+kval = X_vals[y1_vals.index(max(y1_vals))]
+bestscore = max(y1_vals)
+plt.scatter(kval, bestscore, marker='X', color=colors[0], label='score={0}@k={1}'.format(round(bestscore,
+3), kval))
+plt.plot(array((X_vals)), array((y2_vals)), color=colors[1], lw=2,
+label='Agglomerative Clustering')
+kval = X_vals[y2_vals.index(max(y2_vals))]
+bestscore = max(y2_vals)
+plt.scatter(kval, bestscore, marker='o', color=colors[1], label='score={0}@k={1}'.format(round(bestscore,
+3), kval))
+plt.legend(loc='center right')
+plt.title('Scoring-{0}'.format(scoringMethods[i]))
+plt.xlabel('Num Clusters')
+plt.ylabel('score')
+plt.show()
+plt.figure()
